@@ -1,5 +1,6 @@
 import Foundation
 import SQLite
+import Combine
 
 /// A ``StorageEngine`` based on an SQLite database.
 ///
@@ -29,7 +30,15 @@ import SQLite
 /// One alternative is to make the initializer `throw`, and that's a perfectly reasonable tradeoff.
 /// While that is doable, I believe it's very unlikely the caller will have specific remedies for
 /// specific SQLite errors, so for simplicity I've made the initializer return an optional ``SQLiteStorageEngine``.
-public actor SQLiteStorageEngine: StorageEngine {
+public actor SQLiteStorageEngine: NotifyingStorageEngine {
+
+    public let didCreateItems = PassthroughSubject<[CacheKey], Never>()
+
+    public let didUpdateItems = PassthroughSubject<[CacheKey], Never>()
+
+    public let didRemoveItems = PassthroughSubject<[CacheKey], Never>()
+
+    public func observeNotifications() { }
 
     private let connection: Connection
 
@@ -80,10 +89,14 @@ public actor SQLiteStorageEngine: StorageEngine {
                     .filter(Self.expressions.keyRow == key.rawValue)
                     .update(values)
             )
+
+            didUpdateItems.send([key])
         } else {
             try self.connection.run(
                 Self.storageTable.insert(values)
             )
+
+            didCreateItems.send([key])
         }
     }
 
@@ -103,6 +116,8 @@ public actor SQLiteStorageEngine: StorageEngine {
         try self.connection.run(
             Self.storageTable.insertMany(or: .replace, values)
         )
+
+        didUpdateItems.send(dataAndKeys.map(\.key))
     }
 
     /// Reads `Data` from disk based on the associated ``CacheKey``.
@@ -194,6 +209,8 @@ public actor SQLiteStorageEngine: StorageEngine {
     public func remove(key: CacheKey) throws {
         let deleteQuery = Self.storageTable.filter(Self.expressions.keyRow == key.rawValue)
         try self.connection.run(deleteQuery.delete())
+
+        didRemoveItems.send([key])
     }
 
     /// Removes `Data` items from the database based on the associated array of ``CacheKey``s provided as a parameter.
@@ -207,6 +224,8 @@ public actor SQLiteStorageEngine: StorageEngine {
             .limit(keys.count)
 
         try self.connection.run(deleteQuery.delete())
+
+        didRemoveItems.send(keys)
     }
 
     /// Removes all the `Data` items from the database.
