@@ -1,5 +1,5 @@
 import XCTest
-@testable import Bodega
+@testable @_spi(Boutique) import Bodega
 
 final class CacheKeyTests: XCTestCase {
 
